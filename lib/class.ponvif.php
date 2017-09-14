@@ -145,8 +145,8 @@ class Ponvif {
 			$sock_read   = array($sock);
 			$sock_write  = NULL;
 			$sock_except = NULL;
-
-			if ( socket_select( $sock_read, $sock_write, $sock_except, $this->discoverytimeout ) > 0 ) {
+			// replaced "if" with "while" bellow so it returns all available ONVIF cameras
+			while ( socket_select( $sock_read, $sock_write, $sock_except, $this->discoverytimeout ) > 0 ) {
 				if(FALSE !== @socket_recvfrom($sock, $response, 9999, 0, $from, $this->discoverymcastport)){
 					if($response != NULL && $response != $post_string){
 						$response = $this->_xml2array($response);

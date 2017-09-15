@@ -124,14 +124,39 @@ class Ponvif {
 	{
 		// nothing to do
 	}
-	
+
+	/*
+	    Generate unique uuid so discover gets response from the cameras every time
+	*/
+	protected function gen_uuid() {
+		return sprintf( '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+			// 32 bits for "time_low"
+			mt_rand( 0, 0xffff ), mt_rand( 0, 0xffff ),
+
+			// 16 bits for "time_mid"
+			mt_rand( 0, 0xffff ),
+
+			// 16 bits for "time_hi_and_version",
+			// four most significant bits holds version number 4
+			mt_rand( 0, 0x0fff ) | 0x4000,
+
+			// 16 bits, 8 bits for "clk_seq_hi_res",
+			// 8 bits for "clk_seq_low",
+			// two most significant bits holds zero and one for variant DCE1.1
+			mt_rand( 0, 0x3fff ) | 0x8000,
+
+			// 48 bits for "node"
+			mt_rand( 0, 0xffff ), mt_rand( 0, 0xffff ), mt_rand( 0, 0xffff )
+		);
+	}
+
 	/*
 		WS-Discovery
 	*/
 	public function discover(){
 		$result = array();
-		$timeout = time() + $this->discoverytimeout;
-		$post_string = '<?xml version="1.0" encoding="UTF-8"?><e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope" xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:dn="http://www.onvif.org/ver10/network/wsdl"><e:Header><w:MessageID>uuid:84ede3de-7dec-11d0-c360-f01234567890</w:MessageID><w:To e:mustUnderstand="true">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To><w:Action a:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header><e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body></e:Envelope>';
+		$timeout = time() + $this->discoverytimeout;            
+		$post_string = '<?xml version="1.0" encoding="UTF-8"?><e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope" xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:dn="http://www.onvif.org/ver10/network/wsdl"><e:Header><w:MessageID>uuid:' . $this->gen_uuid() . '</w:MessageID><w:To e:mustUnderstand="true">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To><w:Action a:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header><e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body></e:Envelope>';
 		try {
 			if(FALSE == ($sock = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP))){
 				echo('Create socket error: ['.socket_last_error().'] '.socket_strerror(socket_last_error()));
@@ -145,9 +170,9 @@ class Ponvif {
 			$sock_read   = array($sock);
 			$sock_write  = NULL;
 			$sock_except = NULL;
-			// replaced "if" with "while" bellow so it returns all available ONVIF cameras
+
 			while ( socket_select( $sock_read, $sock_write, $sock_except, $this->discoverytimeout ) > 0 ) {
-				if(FALSE !== @socket_recvfrom($sock, $response, 9999, 0, $from, $this->discoverymcastport)){
+				if (FALSE !== @socket_recvfrom($sock, $response, 9999, 0, $from, $this->discoverymcastport)){
 					if($response != NULL && $response != $post_string){
 						$response = $this->_xml2array($response);
 						if(!$this->isFault($response)){
@@ -840,15 +865,16 @@ class Ponvif {
 		$sources=array();
 		
 		if (isset($videoSources['@attributes'])) {
-			// NVT is a camera
-			$sources[0]['sourcetoken']=$videoSources['@attributes']['token'];
-			$this->_getProfileData($sources,0,$profiles);
+			// NVT is a camera			
+			// e1ioan - moved the "sourcetoken" in the first profile array
+			$sources[0][0]['sourcetoken']=$videoSources['@attributes']['token'];
+			$this->_getProfileData($sources,0,$profiles);			
 		}
 		else {
 			// NVT is an encoder
 			for ($i=0;$i<count($videoSources);$i++) {
 					if (strtolower($videoSources[$i]['@attributes']['SignalActive'])=='true') {
-						$sources[$i]['sourcetoken']=$videoSources[$i]['@attributes']['token'];
+						$sources[$i][0]['sourcetoken']=$videoSources[$i]['@attributes']['token'];
 						$this->_getProfileData($sources,$i,$profiles);
 				}
 			} // for
@@ -860,7 +886,7 @@ class Ponvif {
 	protected function _getProfileData(&$sources,$i,$profiles) {
 		$inprofile=0;
 		for ($y=0; $y < count($profiles); $y++) {
-			if ($profiles[$y]['VideoSourceConfiguration']['SourceToken']==$sources[$i]['sourcetoken']) {
+			if ($profiles[$y]['VideoSourceConfiguration']['SourceToken']==$sources[$i][0]['sourcetoken']) {
 				$sources[$i][$inprofile]['profilename']=$profiles[$y]['Name'];
 				$sources[$i][$inprofile]['profiletoken']=$profiles[$y]['@attributes']['token'];
 				if ( isset($profiles[$y]['VideoEncoderConfiguration'])) {
